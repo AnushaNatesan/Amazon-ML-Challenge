@@ -15,23 +15,28 @@ The submission package follows the exact required layout:
 ```text
 GenX_H4CK3RS!_submission.zip/
 ├── output/
-│   ├── matching_results.tsv        # Scored leaderboard predictions
-│   └── candidate_pairs.tsv         # Final candidate set fed to matcher
+│   ├── matching_results.tsv            # Scored leaderboard predictions
+│   └── candidate_pairs.tsv             # Final candidate set fed to matcher
 ├── code/
 │   └── business_entity_resolution/
-│       ├── src/                    # Source code modules
+│       ├── src/                        # Source code modules
 │       │   ├── __init__.py
-│       │   ├── data_loader.py      # TSV loading with tab safety & schema checks
-│       │   ├── eda.py              # Exploratory data analysis & reporting
-│       │   ├── metrics.py          # Exact macro F_0.5 & local validation split
-│       │   ├── text_preprocessing.py # Multilingual & country-agnostic normalization
-│       │   └── blocking.py         # Country-partitioned multi-pass candidate blocker
-│       ├── run_all_tests.py        # Unified test runner (Phases 1, 2, 3)
-│       ├── run_candidate_generation.py # End-to-end blocking runner
-│       ├── package_submission.py   # Packager & official validator check utility
-│       ├── README.md               # End-to-end reproduction instructions
-│       └── requirements.txt        # Pinned Python environment dependencies
-└── Documentation_template.md       # Methodology documentation
+│       │   ├── data_loader.py          # Phase 1: TSV loading with tab safety & schema checks
+│       │   ├── eda.py                  # Phase 1: Exploratory data analysis & reporting
+│       │   ├── metrics.py              # Phase 1: Exact macro F_0.5 & local validation split
+│       │   ├── text_preprocessing.py   # Phase 2: Multilingual & country-agnostic normalization
+│       │   ├── blocking.py             # Phase 3: Country-partitioned multi-pass candidate blocker
+│       │   └── features.py             # Phase 4: Pairwise similarity & compatibility features
+│       ├── run_all_tests.py            # Unified test runner (21/21 tests, Phases 1–4)
+│       ├── run_candidate_generation.py # End-to-end candidate blocking runner
+│       ├── run_feature_extraction.py   # Pairwise feature extraction runner
+│       ├── run_phase1_phase2_tests.py  # Phase 1 & 2 automated tests
+│       ├── run_phase3_blocking_tests.py# Phase 3 automated tests
+│       ├── run_phase4_feature_tests.py # Phase 4 automated tests
+│       ├── package_submission.py       # Packager & official validator check utility
+│       ├── README.md                   # End-to-end reproduction instructions
+│       └── requirements.txt            # Pinned Python environment dependencies
+└── Documentation_template.md           # Methodology documentation
 ```
 
 ---
@@ -47,7 +52,7 @@ pip install -r requirements.txt
 
 ---
 
-## 3. Implemented Modules (Phases 1, 2, and 3)
+## 3. Implemented Modules (Phases 1, 2, 3, and 4)
 
 ### Phase 1: Data Loader & Local Evaluation Harness
 1. **`src/data_loader.py`**:
@@ -82,12 +87,23 @@ pip install -r requirements.txt
    - **Candidate Pruning & Export:** Caps candidates per entity (top 40-50). Strictly exports tab-separated `output/candidate_pairs.tsv`.
    - **Recall Ceiling Performance:** Achieves $\ge 97\%$ empirical recall ceiling on validation ground truth.
 
+### Phase 4: Pairwise Feature Engineering
+1. **`src/features.py`**:
+   - **Name Similarities:** RapidFuzz normalized Levenshtein ratio, Jaro-Winkler similarity, Token Sort Ratio, Token Set Ratio, Partial Ratio, character 3-gram Jaccard, word token Jaccard, and first-token anchor similarity.
+   - **Address Similarities:** Levenshtein, Jaro-Winkler, Token Set Ratio, Token Jaccard, Token Containment.
+   - **Missing Address Protection:** Explicit `addr_is_missing` flag for the ~3.3% missing address records; imputes neutral 0.0 with zero penalty.
+   - **Ternary Disagreement Detection:**
+     * Building number match: `+1.0` (match), `-1.0` (conflict), `0.0` (missing).
+     * Postal / PIN code match: `+1.0` (match), `-1.0` (conflict), `0.0` (missing).
+   - **Legal Form Compatibility:** `+1.0` (exact match), `-1.0` (conflicting forms e.g. `pvt_ltd` vs `llp`), `0.0` (neutral).
+   - **Candidate Metadata:** Candidate rank position, source indicators (`is_source_2`, `is_source_3`), and high-confidence anchors.
+
 ---
 
 ## 4. End-to-End Pipeline Execution
 
 ### Step 1: Run All Verification Tests
-Execute the complete test suite across Phases 1, 2, and 3:
+Execute the complete test suite across Phases 1, 2, 3, and 4:
 ```bash
 python code/business_entity_resolution/run_all_tests.py
 ```
@@ -108,7 +124,13 @@ Or generate candidates for test records:
 python code/business_entity_resolution/run_candidate_generation.py --mode test --max-candidates 40
 ```
 
-### Step 4: Submission Validation & Packaging
+### Step 4: Run Pairwise Feature Extraction
+Extract pairwise features from candidates for model training or inference:
+```bash
+python code/business_entity_resolution/run_feature_extraction.py --mode val --sample-size 5000
+```
+
+### Step 5: Submission Validation & Packaging
 Package the submission into `GenX_H4CK3RS!_submission.zip` and run the official validator:
 ```bash
 python code/business_entity_resolution/package_submission.py

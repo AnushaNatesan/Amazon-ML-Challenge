@@ -144,4 +144,39 @@ d. Empirical Recall Ceiling Results:
    - Achieves a Recall Ceiling >= 97% with 100% entity coverage.
    - Caps candidates at top 40 candidates per Source 1 entity, ensuring downstream
      pairwise classification remains computationally fast and lightweight.
+
+
+9. PHASE 4 PAIRWISE FEATURE ENGINEERING FINDINGS
+--------------------------------------------------------------------------------
+a. 33-Dimensional Feature Representation:
+   - Name Similarity Features (14 metrics):
+     RapidFuzz normalized Levenshtein ratio, Jaro-Winkler similarity, Token Sort Ratio,
+     Token Set Ratio, Partial Ratio, character 3-gram Jaccard, word token Jaccard &
+     containment, first-token anchor similarity, name length ratio, token count diff,
+     and raw unstripped name token set ratio.
+   - Address Similarity & Missing Address Handling (6 metrics):
+     Address Levenshtein & Jaro-Winkler, Token Set Ratio, token Jaccard & containment,
+     and address length ratio.
+     Missing Address Protection: Explicit 'addr_is_missing' binary indicator safely
+     handles the ~3.3% missing address records without corrupting model gradients.
+   - Ternary Disagreement Detection (4 metrics):
+     Building numbers: +1.0 (exact match), -1.0 (conflict), 0.0 (missing/neutral).
+     Postal codes: +1.0 (exact match), -1.0 (conflict), 0.0 (missing/neutral).
+     Postal code 3-digit prefix match and shared numeric token count.
+     INFERENCE: Two candidate businesses sharing a city or brand name but with conflicting
+     house numbers (e.g., No. 12 vs No. 450) or conflicting postal codes are almost
+     always false positives. Ternary -1.0 penalization provides an immense negative signal.
+   - Legal Entity Form Compatibility (2 metrics):
+     +1.0 (matching legal form e.g. inc vs inc, pvt_ltd vs pvt_ltd),
+     -1.0 (conflicting forms e.g. pvt_ltd vs llp, or corp vs ngo),
+     0.0 (neutral / unextracted).
+   - Candidate Metadata & Composite Anchors (7 metrics):
+     Candidate rank position, source indicators (is_source_2, is_source_3),
+     name-address interaction overlap, and high-confidence composite anchors
+     (exact name match + exact building number match).
+
+b. Verification & Test Suite Status:
+   - 21 / 21 automated tests passing across Phases 1, 2, 3, and 4.
+   - Feature extraction pipeline verified on candidate pairs with 0 NaN values.
 ================================================================================
+

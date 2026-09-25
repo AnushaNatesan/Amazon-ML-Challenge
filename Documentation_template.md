@@ -44,12 +44,14 @@ Key insights discovered during Exploratory Data Analysis (EDA):
 ## 4. Matching Model
 
 **Features used:**
-- Name features: RapidFuzz Levenshtein, token sort ratio, Jaccard similarity, legal suffix match indicator.
-- Address features: Street number exact match, postal code match, token overlap, longest common subsequence.
-- Other: Source indicators, length differences.
+- **Name features:** RapidFuzz normalized Levenshtein ratio, Jaro-Winkler similarity, Token Sort Ratio, Token Set Ratio, Partial Ratio, character 3-gram Jaccard, word token Jaccard & containment ratio, first-token anchor match, length ratio, token count difference, and raw name token set ratio.
+- **Address features:** Normalized Levenshtein & Jaro-Winkler, Token Set Ratio, token Jaccard & containment, explicit missing address indicator (`addr_is_missing`) protecting against missing fields, and length ratio.
+- **Numeric & Disagreement features:** Ternary building number match (+1.0 match, -1.0 conflict, 0.0 neutral), ternary postal/PIN code match (+1.0 match, -1.0 conflict, 0.0 neutral), postal code 3-digit prefix match, shared numeric token count.
+- **Structural & Metadata features:** Ternary legal entity form compatibility (+1.0 match, -1.0 conflict, 0.0 neutral), candidate blocking rank, source indicators (`is_source_2`, `is_source_3`), and high-confidence composite anchors.
 
 **Model type:** Gradient Boosted Decision Trees (LightGBM / XGBoost) & calibrated logistic scoring.  
 **Threshold selection method:** F_0.5 optimization on held-out 20% local validation split.
+
 
 ---
 

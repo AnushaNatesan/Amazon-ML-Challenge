@@ -5,3 +5,4 @@ __pycache__/
 .pytest_cache/
 tmp_test_data/
 *.zip
+output/*.csv

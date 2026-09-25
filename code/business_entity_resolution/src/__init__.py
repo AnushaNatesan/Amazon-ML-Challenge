@@ -33,6 +33,15 @@ from .blocking import (
     evaluate_blocking_recall,
     export_candidate_pairs_tsv,
 )
+from .features import (
+    char_ngram_jaccard,
+    token_jaccard,
+    token_containment_ratio,
+    prepare_record_profile,
+    compute_pairwise_features,
+    extract_features_for_candidate_pairs,
+    FEATURE_NAMES,
+)
 
 __all__ = [
     "load_source_tsv",
@@ -55,4 +64,11 @@ __all__ = [
     "MultiPassBlocker",
     "evaluate_blocking_recall",
     "export_candidate_pairs_tsv",
+    "char_ngram_jaccard",
+    "token_jaccard",
+    "token_containment_ratio",
+    "prepare_record_profile",
+    "compute_pairwise_features",
+    "extract_features_for_candidate_pairs",
+    "FEATURE_NAMES",
 ]

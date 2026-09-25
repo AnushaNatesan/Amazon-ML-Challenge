@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Unified End-to-End Pipeline Verification Suite (Phases 1, 2, and 3)
+Unified End-to-End Pipeline Verification Suite (Phases 1, 2, 3, and 4)
 Team: GenX H4CK3RS!
 """
 
@@ -23,11 +23,12 @@ from run_phase1_phase2_tests import (
     TestPhase2TextPreprocessing,
 )
 from run_phase3_blocking_tests import TestPhase3Blocking
+from run_phase4_feature_tests import TestPhase4Features
 
 
 def run_all_tests():
     print("=" * 70)
-    print("   ML Challenge 2026 — End-to-End Test Suite (Phases 1, 2, 3)")
+    print("   ML Challenge 2026 — End-to-End Test Suite (Phases 1, 2, 3, 4)")
     print("   Team: GenX H4CK3RS!")
     print("=" * 70)
 
@@ -38,13 +39,14 @@ def run_all_tests():
     suite.addTests(loader.loadTestsFromTestCase(TestPhase1Metrics))
     suite.addTests(loader.loadTestsFromTestCase(TestPhase2TextPreprocessing))
     suite.addTests(loader.loadTestsFromTestCase(TestPhase3Blocking))
+    suite.addTests(loader.loadTestsFromTestCase(TestPhase4Features))
 
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
 
     if result.wasSuccessful():
         print("\n" + "=" * 70)
-        print("  [PASS] ALL PIPELINE TESTS (PHASES 1, 2, 3) PASSED SUCCESSFULLY!")
+        print("  [PASS] ALL PIPELINE TESTS (PHASES 1, 2, 3, 4) PASSED SUCCESSFULLY!")
         print("=" * 70)
         return 0
     else:
