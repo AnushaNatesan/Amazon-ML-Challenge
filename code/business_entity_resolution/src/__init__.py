@@ -27,6 +27,12 @@ from .eda import (
     run_eda,
     generate_eda_report,
 )
+from .blocking import (
+    extract_blocking_keys,
+    MultiPassBlocker,
+    evaluate_blocking_recall,
+    export_candidate_pairs_tsv,
+)
 
 __all__ = [
     "load_source_tsv",
@@ -45,4 +51,8 @@ __all__ = [
     "preprocess_dataframe",
     "run_eda",
     "generate_eda_report",
+    "extract_blocking_keys",
+    "MultiPassBlocker",
+    "evaluate_blocking_recall",
+    "export_candidate_pairs_tsv",
 ]

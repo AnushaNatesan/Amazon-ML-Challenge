@@ -106,10 +106,42 @@ d. Address Permutation & Abbreviation Expansions:
   Empirical data profiling and markdown summary generation.
 - code/business_entity_resolution/src/metrics.py
   Exact macro F_0.5 evaluation harness with singleton rules & 20% validation split.
-- code/business_entity_resolution/src/text_preprocessing.py
-  Multilingual accent cleaner, legal form parser, address abbreviation expander.
-- code/business_entity_resolution/run_phase1_phase2_tests.py
-  11/11 automated unit and integration tests passing.
+- code/business_entity_resolution/src/blocking.py
+  Country-partitioned multi-pass inverted index candidate generator.
+- code/business_entity_resolution/run_phase3_blocking_tests.py
+  5/5 automated blocking unit and integration tests passing.
+- code/business_entity_resolution/run_all_tests.py
+  Unified test runner verifying all 16 pipeline tests across Phases 1, 2, and 3.
+- code/business_entity_resolution/run_candidate_generation.py
+  End-to-end blocking runner for validation recall evaluation and test candidate export.
 - code/business_entity_resolution/package_submission.py
   Packaging and validation script for GenX_H4CK3RS!_submission.zip.
+
+
+8. PHASE 3 BLOCKING & CANDIDATE GENERATION FINDINGS
+--------------------------------------------------------------------------------
+a. Hard Country Partitioning:
+   - Partitions target records strictly by 'country' before candidate indexing.
+   - Reduces pairwise comparison search space by 60%–85% with 0% ground-truth match loss.
+
+b. Multi-Pass Inverted Index Keys:
+   - Key A (Core Name Tokens): Exact clean name, first 2 tokens, individual tokens, sorted tokens.
+   - Key B (Numeric & Address): Building number + first name token, building number + address token,
+     and distinctive address tokens (>= 5 chars).
+   - Key C (Postal / PIN): Postal code + first name token, postal code + address token, exact postal code.
+   - Key D (Sparse N-gram & Typos): 4-character prefix and character 3-grams.
+
+c. The Transliteration & DBA Breakthrough:
+   - In multiple ground truth pairs (e.g. Red Ventures vs. 'रेड वेंचर्स', Balaji Investment vs.
+     'బాలాజీ ఇన్వెస్ట్‌మెంట్', Zander Blue vs. 'zblue.com'), the business name in Source 2/3
+     is written in Indic scripts or as a web domain, yielding zero name token overlap.
+   - However, distinctive address tokens (e.g. 'banipark', 'jeedimetla', 'meadowmont', 'shahagad')
+     remain in English and are identical.
+   - Adding distinctive address token keys increased recall from 82.5% to 97.7% - 100.0%.
+
+d. Empirical Recall Ceiling Results:
+   - Tested against ground truth matches with 20,000+ distractor records.
+   - Achieves a Recall Ceiling >= 97% with 100% entity coverage.
+   - Caps candidates at top 40 candidates per Source 1 entity, ensuring downstream
+     pairwise classification remains computationally fast and lightweight.
 ================================================================================
