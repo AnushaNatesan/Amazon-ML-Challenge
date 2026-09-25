@@ -253,14 +253,20 @@ def extract_features_for_candidate_pairs(
     - labels: Optional 1D numpy array of binary labels (if ground_truth_dict is provided).
     - pair_ids: List of (source1_id, candidate_id) tuples aligned with features_df.
     """
-    print(f"[*] Pre-computing profiles for {len(source1_df):,} Source 1 records...")
+    needed_s1 = set(candidate_dict.keys())
+    needed_targets = {cid for cands in candidate_dict.values() for cid in cands}
+
+    s1_sub = source1_df[source1_df["entity_id"].isin(needed_s1)]
+    target_sub = target_pool_df[target_pool_df["entity_id"].isin(needed_targets)]
+
+    print(f"[*] Pre-computing profiles for {len(s1_sub):,} Source 1 records...")
     s1_profiles: Dict[str, Dict[str, Any]] = {}
-    for row in source1_df.to_dict("records"):
+    for row in s1_sub.to_dict("records"):
         s1_profiles[row["entity_id"]] = prepare_record_profile(row)
 
-    print(f"[*] Pre-computing profiles for {len(target_pool_df):,} target records...")
+    print(f"[*] Pre-computing profiles for {len(target_sub):,} target records...")
     target_profiles: Dict[str, Dict[str, Any]] = {}
-    for row in target_pool_df.to_dict("records"):
+    for row in target_sub.to_dict("records"):
         target_profiles[row["entity_id"]] = prepare_record_profile(row)
 
     pair_ids: List[Tuple[str, str]] = []

@@ -20,6 +20,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
 
+import joblib
 import numpy as np
 import pandas as pd
 import lightgbm as lgb
@@ -36,7 +37,11 @@ if str(script_dir) not in sys.path:
     sys.path.insert(0, str(script_dir))
 
 from src.data_loader import resolve_data_paths, save_tsv
-from src.features import FEATURE_NAMES
+from src.features import (
+    prepare_record_profile,
+    compute_pairwise_features,
+    FEATURE_NAMES,
+)
 from src.metrics import calculate_macro_f05, compute_entity_f_beta
 from package_submission import create_submission_zip, validate_against_official_tool
 
@@ -62,7 +67,7 @@ def detect_gpu_environment() -> Tuple[bool, str]:
 def run_phase5_pipeline(
     feature_csv_path: Optional[str] = None,
     output_dir: Optional[str] = None,
-    n_estimators: int = 200,
+    n_estimators: int = 250,
     learning_rate: float = 0.05,
     random_state: int = 42,
 ) -> Dict[str, float]:
@@ -70,7 +75,9 @@ def run_phase5_pipeline(
     start_time = time.time()
     paths = resolve_data_paths()
     out_dir = Path(output_dir) if output_dir else workspace_root / "output"
+    models_dir = workspace_root / "models"
     out_dir.mkdir(parents=True, exist_ok=True)
+    models_dir.mkdir(parents=True, exist_ok=True)
 
     feat_path = Path(feature_csv_path) if feature_csv_path else out_dir / "train_features.csv"
 
@@ -123,7 +130,7 @@ def run_phase5_pipeline(
     print(f"[+] Val split:   {len(X_val):,} pairs ({len(s1_val):,} S1 entities)")
 
     # 4. LightGBM Binary Classifier Training
-    scale_weight = min(25.0, max(5.0, imbalance_ratio * 0.5))
+    scale_weight = min(25.0, max(1.0, imbalance_ratio))
     lgb_params = {
         "objective": "binary",
         "metric": "binary_logloss",
@@ -160,6 +167,13 @@ def run_phase5_pipeline(
         eval_set=[(X_val, y_val)],
         callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)],
     )
+
+    # Save model weights to models/
+    pkl_model_path = models_dir / "lgb_model.pkl"
+    txt_model_path = models_dir / "lgb_model.txt"
+    joblib.dump(model, pkl_model_path)
+    model.booster_.save_model(str(txt_model_path))
+    print(f"[+] Saved trained model to {pkl_model_path.name} and {txt_model_path.name}")
 
     # Feature Importances
     importances = model.feature_importances_
@@ -210,43 +224,115 @@ def run_phase5_pipeline(
     print(f"[+] Optimal Decision Threshold: {best_threshold:.2f} (Validation Macro F_0.5 = {best_f05 * 100:.2f}%)")
 
     # 6. Generate Official Test Predictions & Candidate Pairs
-    print("\n[*] Generating Official Leaderboard Deliverables...")
+    print("\n[*] Generating Official Leaderboard Deliverables (Inference)...")
     test_s1_file = paths["test"]["source1"]
     matching_out = out_dir / "matching_results.tsv"
     candidate_out = out_dir / "candidate_pairs.tsv"
 
-    print(f"[*] Reading all required Source 1 entities from: {test_s1_file.name}")
+    # Step A: Index a targeted pool of S1 clean names (first 50,000 S1 records)
+    print(f"[*] Reading Source 1 test entities from: {test_s1_file.name}")
+    s1_dict = {}
+    s1_name_map = {}
     with open(test_s1_file, "r", encoding="utf-8") as f:
-        next(f)  # skip header
-        all_test_s1 = [line.split("\t", 1)[0].strip() for line in f if line.strip()]
+        next(f)
+        for i, line in enumerate(f):
+            if i >= 50000:
+                break
+            parts = line.rstrip("\n").split("\t")
+            if len(parts) >= 4:
+                p = prepare_record_profile({
+                    "entity_id": parts[0],
+                    "business_name": parts[1],
+                    "business_address": parts[2],
+                    "country": parts[3],
+                })
+                s1_dict[parts[0]] = p
+                if p["clean_name"]:
+                    s1_name_map.setdefault(p["clean_name"], []).append(parts[0])
 
-    print(f"[+] Total required test entities: {len(all_test_s1):,}")
+    print(f"[+] Prepared profiles and name index for {len(s1_dict):,} test S1 entities.")
 
-    # Build mapping for high-confidence candidate matches
-    # Load candidate matches from feature scoring if available
+    # Step B: Scan candidate target records from test_source2 and test_source3
     test_cand_map: Dict[str, List[str]] = defaultdict(list)
+    cand_pairs_to_score = []
+
+    for s_name, path in [
+        ("Source 2", paths["test"]["source2"]),
+        ("Source 3", paths["test"]["source3"]),
+    ]:
+        print(f"[*] Scanning {s_name} ({path.name}) for candidate matches...")
+        with open(path, "r", encoding="utf-8") as f:
+            next(f)
+            for i, line in enumerate(f):
+                if i >= 100000:
+                    break
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) >= 4:
+                    rec = {
+                        "entity_id": parts[0],
+                        "business_name": parts[1],
+                        "business_address": parts[2],
+                        "country": parts[3],
+                    }
+                    p = prepare_record_profile(rec)
+                    cn = p["clean_name"]
+                    if cn and cn in s1_name_map:
+                        for s1_id in s1_name_map[cn]:
+                            test_cand_map[s1_id].append(parts[0])
+                            cand_pairs_to_score.append((s1_dict[s1_id], p))
+
+    print(f"[+] Found {len(cand_pairs_to_score):,} candidate pairs across {len(test_cand_map):,} S1 entities.")
+
+    # Step C: Extract 33 features and score with trained LightGBM model
     test_match_map: Dict[str, List[str]] = defaultdict(list)
+    if cand_pairs_to_score:
+        print(f"[*] Computing 33 pairwise features for {len(cand_pairs_to_score):,} test candidate pairs...")
+        feats = [compute_pairwise_features(p1, p2) for p1, p2 in cand_pairs_to_score]
+        X_test = pd.DataFrame(feats)[FEATURE_NAMES].values
 
-    # Write output/candidate_pairs.tsv
-    print(f"[*] Writing {candidate_out.name} ({len(all_test_s1):,} rows)...")
-    with open(candidate_out, "w", encoding="utf-8", newline="") as f:
-        f.write("source1_entity_id\tcandidate_entity_ids\n")
-        for s1 in all_test_s1:
-            cands = test_cand_map.get(s1, [])
+        print(f"[*] Scoring candidate pairs with trained LightGBM model...")
+        test_probs = model.predict_proba(X_test)[:, 1]
+
+        # Apply optimal decision threshold best_threshold
+        for (p1, p2), prob in zip(cand_pairs_to_score, test_probs):
+            if prob >= best_threshold:
+                s1_id = p1["entity_id"]
+                cand_id = p2["entity_id"]
+                if cand_id not in test_match_map[s1_id]:
+                    test_match_map[s1_id].append(cand_id)
+
+        n_matched_entities = len(test_match_map)
+        n_matched_pairs = sum(len(v) for v in test_match_map.values())
+        print(f"[+] Predicted {n_matched_pairs:,} true matches across {n_matched_entities:,} S1 entities (τ* = {best_threshold:.2f}).")
+
+    # Step D: Stream all 1,732,544 rows to official candidate_pairs.tsv and matching_results.tsv
+    print(f"[*] Streaming official outputs for all 1.73M entities...")
+    with open(test_s1_file, "r", encoding="utf-8") as f_in, \
+         open(candidate_out, "w", encoding="utf-8", newline="") as f_cand, \
+         open(matching_out, "w", encoding="utf-8", newline="") as f_match:
+
+        next(f_in)  # skip header
+        f_cand.write("source1_entity_id\tcandidate_entity_ids\n")
+        f_match.write("source1_entity_id\tmatched_entity_ids\n")
+
+        total_written = 0
+        for line in f_in:
+            if not line.strip():
+                continue
+            s1_id = line.split("\t", 1)[0].strip()
+
+            cands = test_cand_map.get(s1_id, [])
+            matches = test_match_map.get(s1_id, [])
+
             cands_str = ",".join(cands)
-            f.write(f"{s1}\t{cands_str}\n")
-
-    # Write output/matching_results.tsv
-    print(f"[*] Writing {matching_out.name} ({len(all_test_s1):,} rows)...")
-    with open(matching_out, "w", encoding="utf-8", newline="") as f:
-        f.write("source1_entity_id\tmatched_entity_ids\n")
-        for s1 in all_test_s1:
-            matches = test_match_map.get(s1, [])
             matches_str = ",".join(matches)
-            f.write(f"{s1}\t{matches_str}\n")
 
-    print(f"[+] Output matching_results.tsv: {matching_out.stat().st_size / 1024 / 1024:.1f} MB")
-    print(f"[+] Output candidate_pairs.tsv:  {candidate_out.stat().st_size / 1024 / 1024:.1f} MB")
+            f_cand.write(f"{s1_id}\t{cands_str}\n")
+            f_match.write(f"{s1_id}\t{matches_str}\n")
+            total_written += 1
+
+    print(f"[+] Output {candidate_out.name}: {candidate_out.stat().st_size / 1024 / 1024:.1f} MB ({total_written:,} rows)")
+    print(f"[+] Output {matching_out.name}:  {matching_out.stat().st_size / 1024 / 1024:.1f} MB ({total_written:,} rows)")
 
     # 7. Package and Validate Submission
     print("\n[*] Packaging submission into GenX_H4CK3RS!_submission.zip...")
@@ -261,7 +347,9 @@ def run_phase5_pipeline(
     return {
         "best_threshold": float(best_threshold),
         "validation_macro_f05": float(best_f05),
-        "total_test_entities": len(all_test_s1),
+        "total_test_entities": total_written,
+        "matched_entities": len(test_match_map),
+        "total_matches": sum(len(v) for v in test_match_map.values()),
     }
 
 
