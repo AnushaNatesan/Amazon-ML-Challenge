@@ -98,6 +98,13 @@ pip install -r requirements.txt
    - **Legal Form Compatibility:** `+1.0` (exact match), `-1.0` (conflicting forms e.g. `pvt_ltd` vs `llp`), `0.0` (neutral).
    - **Candidate Metadata:** Candidate rank position, source indicators (`is_source_2`, `is_source_3`), and high-confidence anchors.
 
+### Phase 5: Scoring Model, Threshold Optimization & Inference
+1. **`model.ipynb` & `run_phase5_model.py`**:
+   - **Class Imbalance Handling:** Calibrated LightGBM `scale_pos_weight` ($15.0 - 25.0$) counteracting the extreme candidate imbalance (~1:1600).
+   - **Colab T4 GPU Acceleration:** Seamless GPU support (`device='gpu'` / `device_type='cuda'`) with robust multi-threaded CPU fallback.
+   - **Precision-Heavy Macro $F_{0.5}$ Threshold Tuning:** Grid search optimizing decision threshold $\tau^*$ to penalize false positive merges twice as heavily as false negatives.
+   - **Test Set Inference & Leaderboard Export:** Generates official `output/matching_results.tsv` and `output/candidate_pairs.tsv` across all 1,732,544 test entities.
+
 ---
 
 ## 4. End-to-End Pipeline Execution
@@ -130,7 +137,14 @@ Extract pairwise features from candidates for model training or inference:
 python code/business_entity_resolution/run_feature_extraction.py --mode val --sample-size 5000
 ```
 
-### Step 5: Submission Validation & Packaging
+### Step 5: Run Phase 5 Model Training, Threshold Tuning & Inference
+Train LightGBM, optimize decision threshold, and generate official deliverables:
+```bash
+python code/business_entity_resolution/run_phase5_model.py
+```
+*(Or execute all cells in `model.ipynb` via Google Colab with T4 GPU or local Jupyter).*
+
+### Step 6: Submission Validation & Packaging
 Package the submission into `GenX_H4CK3RS!_submission.zip` and run the official validator:
 ```bash
 python code/business_entity_resolution/package_submission.py

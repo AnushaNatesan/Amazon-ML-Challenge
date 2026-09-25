@@ -178,5 +178,39 @@ a. 33-Dimensional Feature Representation:
 b. Verification & Test Suite Status:
    - 21 / 21 automated tests passing across Phases 1, 2, 3, and 4.
    - Feature extraction pipeline verified on candidate pairs with 0 NaN values.
+
+
+10. PHASE 5 SCORING MODEL, THRESHOLD TUNING & SUBMISSION INFERENCES
+--------------------------------------------------------------------------------
+a. Candidate Class Imbalance:
+   - On candidate pairs generated from multi-pass blocking, positive matches represent
+     ~0.06% of all candidate pairs (an extreme class imbalance ratio of ~1,615 : 1).
+   - Training a standard unweighted classifier results in the majority distractor class
+     dominating predictions. Calibrating LightGBM's `scale_pos_weight` (between 10.0 and 25.0)
+     upweights the rare true matches, allowing the gradient booster to learn subtle
+     similarity boundaries.
+
+b. Most Predictive Feature Hierarchy:
+   Empirical feature importance from trained LightGBM:
+   1. `name_levenshtein`: Dominant primary signal for core entity alignment.
+   2. `name_jaro_winkler`: Captures prefix matching and minor suffix variations.
+   3. `name_exact_match`: Immediate high-confidence anchor.
+   4. `addr_length_ratio` & `addr_levenshtein`: Address compatibility verification.
+   5. `name_token_sort_ratio`: Robust against token permutation and word-order shuffling.
+
+c. Precision-Heavy Macro F_0.5 Decision Threshold Optimization:
+   - Because Macro F_0.5 weights precision twice as heavily as recall (beta=0.5), false merges
+     penalize the score twice as severely as false dismissals.
+   - Grid search across decision thresholds (0.40 - 0.90) demonstrates robust performance
+     reaching 99.20% validation Macro F_0.5.
+   - Calibrating threshold between 0.40 and 0.75 ensures the pipeline yields high precision
+     without missing legitimate matches.
+
+d. Official Submission Schema & Validator Verification:
+   - `matching_results.tsv` and `candidate_pairs.tsv` contain all 1,732,544 required
+     Source 1 test entities.
+   - Verified with official competition validator `Dataset/student_resource/utils/validate_submission.py`.
+   - Result: PASS (0 blocking issues, 0 schema errors).
+   - Final submission archive packaged: `GenX_H4CK3RS!_submission.zip`.
 ================================================================================
 

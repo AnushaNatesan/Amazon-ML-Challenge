@@ -261,3 +261,20 @@ def create_validation_split(
     gt_train_df = train_ground_truth_df[gt_train_mask].copy().reset_index(drop=True)
 
     return s1_train_df, s1_val_df, gt_train_df, gt_val_df
+
+
+def calculate_macro_f05(
+    y_true_dict: Dict[str, Set[str]],
+    y_pred_dict: Dict[str, Set[str]],
+    beta: float = 0.5,
+) -> float:
+    """
+    Computes exact macro-averaged F_0.5 score across all Source 1 entities,
+    respecting singleton rules (empty prediction on true singleton = 1.0, false merge = 0.0).
+    """
+    scores = []
+    for s1_id, true_set in y_true_dict.items():
+        pred_set = y_pred_dict.get(s1_id, set())
+        score, _, _ = compute_entity_f_beta(pred_set, true_set, beta=beta)
+        scores.append(score)
+    return float(np.mean(scores)) if scores else 0.0
