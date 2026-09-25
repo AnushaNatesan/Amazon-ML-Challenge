@@ -1,1 +1,7 @@
 Dataset/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+tmp_test_data/
+*.zip
