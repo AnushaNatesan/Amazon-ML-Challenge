@@ -237,7 +237,7 @@ def run_phase5_pipeline(
         next(f)
         for i, line in enumerate(f):
             # NO LIMITS for final submission
-            parts = line.rstrip("\n").split("\t")
+            parts = line.strip().split("	")
             if len(parts) >= 4:
                 p = prepare_record_profile({
                     "entity_id": parts[0],
@@ -251,20 +251,35 @@ def run_phase5_pipeline(
 
     print(f"[+] Prepared profiles and name index for {len(s1_dict):,} test S1 entities.")
 
-    # Step B: Scan candidate target records from test_source2 and test_source3
-    test_cand_map: Dict[str, List[str]] = defaultdict(list)
-    cand_pairs_to_score = []
+    
+    # Step B & C: Scan, Extract, and Score in Batches to avoid OOM
+    test_cand_map = defaultdict(list)
+    test_match_map = defaultdict(list)
+    
+    batch_pairs = []
+    batch_feats = []
+    
+    def process_batch():
+        if not batch_pairs: return
+        import pandas as pd
+        X_batch = pd.DataFrame(batch_feats)[FEATURE_NAMES].values
+        probs = model.predict_proba(X_batch)[:, 1]
+        for (s1_id, cand_id), prob in zip(batch_pairs, probs):
+            if prob >= best_threshold:
+                if cand_id not in test_match_map[s1_id]:
+                    test_match_map[s1_id].append(cand_id)
+        batch_pairs.clear()
+        batch_feats.clear()
 
     for s_name, path in [
         ("Source 2", paths["test"]["source2"]),
         ("Source 3", paths["test"]["source3"]),
     ]:
-        print(f"[*] Scanning {s_name} ({path.name}) for candidate matches...")
+        print(f"[*] Scanning {s_name} ({path.name}) for candidate matches (Chunked OOM-Safe)...")
         with open(path, "r", encoding="utf-8") as f:
             next(f)
             for i, line in enumerate(f):
-                # NO LIMITS for final submission
-                parts = line.rstrip("\n").split("\t")
+                parts = line.strip().split("	")
                 if len(parts) >= 4:
                     rec = {
                         "entity_id": parts[0],
@@ -274,35 +289,23 @@ def run_phase5_pipeline(
                     }
                     p = prepare_record_profile(rec)
                     cn = p["clean_name"]
-                    if cn and cn in s1_name_map:
+                    if cn and cn in s1_name_map and len(s1_name_map[cn]) < 50:
                         for s1_id in s1_name_map[cn]:
                             if len(test_cand_map[s1_id]) < 100:
-                                test_cand_map[s1_id].append(parts[0])
-                                cand_pairs_to_score.append((s1_dict[s1_id], p))
+                                cand_id = parts[0]
+                                test_cand_map[s1_id].append(cand_id)
+                                batch_pairs.append((s1_id, cand_id))
+                                batch_feats.append(compute_pairwise_features(s1_dict[s1_id], p))
+                                
+                                if len(batch_pairs) >= 50000:
+                                    process_batch()
+    # Flush remaining
+    process_batch()
 
-    print(f"[+] Found {len(cand_pairs_to_score):,} candidate pairs across {len(test_cand_map):,} S1 entities.")
+    n_matched_entities = len(test_match_map)
+    n_matched_pairs = sum(len(v) for v in test_match_map.values())
+    print(f"[+] Predicted {n_matched_pairs:,} true matches across {n_matched_entities:,} S1 entities (τ* = {best_threshold:.2f}).")
 
-    # Step C: Extract 33 features and score with trained LightGBM model
-    test_match_map: Dict[str, List[str]] = defaultdict(list)
-    if cand_pairs_to_score:
-        print(f"[*] Computing 33 pairwise features for {len(cand_pairs_to_score):,} test candidate pairs...")
-        feats = [compute_pairwise_features(p1, p2) for p1, p2 in cand_pairs_to_score]
-        X_test = pd.DataFrame(feats)[FEATURE_NAMES].values
-
-        print(f"[*] Scoring candidate pairs with trained LightGBM model...")
-        test_probs = model.predict_proba(X_test)[:, 1]
-
-        # Apply optimal decision threshold best_threshold
-        for (p1, p2), prob in zip(cand_pairs_to_score, test_probs):
-            if prob >= best_threshold:
-                s1_id = p1["entity_id"]
-                cand_id = p2["entity_id"]
-                if cand_id not in test_match_map[s1_id]:
-                    test_match_map[s1_id].append(cand_id)
-
-        n_matched_entities = len(test_match_map)
-        n_matched_pairs = sum(len(v) for v in test_match_map.values())
-        print(f"[+] Predicted {n_matched_pairs:,} true matches across {n_matched_entities:,} S1 entities (τ* = {best_threshold:.2f}).")
 
     # Step D: Stream all 1,732,544 rows to official candidate_pairs.tsv and matching_results.tsv
     print(f"[*] Streaming official outputs for all 1.73M entities...")
