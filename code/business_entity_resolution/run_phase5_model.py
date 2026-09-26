@@ -236,8 +236,7 @@ def run_phase5_pipeline(
     with open(test_s1_file, "r", encoding="utf-8") as f:
         next(f)
         for i, line in enumerate(f):
-            if i >= 50000:
-                break
+            # NO LIMITS for final submission
             parts = line.rstrip("\n").split("\t")
             if len(parts) >= 4:
                 p = prepare_record_profile({
@@ -264,8 +263,7 @@ def run_phase5_pipeline(
         with open(path, "r", encoding="utf-8") as f:
             next(f)
             for i, line in enumerate(f):
-                if i >= 100000:
-                    break
+                # NO LIMITS for final submission
                 parts = line.rstrip("\n").split("\t")
                 if len(parts) >= 4:
                     rec = {
@@ -278,8 +276,9 @@ def run_phase5_pipeline(
                     cn = p["clean_name"]
                     if cn and cn in s1_name_map:
                         for s1_id in s1_name_map[cn]:
-                            test_cand_map[s1_id].append(parts[0])
-                            cand_pairs_to_score.append((s1_dict[s1_id], p))
+                            if len(test_cand_map[s1_id]) < 100:
+                                test_cand_map[s1_id].append(parts[0])
+                                cand_pairs_to_score.append((s1_dict[s1_id], p))
 
     print(f"[+] Found {len(cand_pairs_to_score):,} candidate pairs across {len(test_cand_map):,} S1 entities.")
 
